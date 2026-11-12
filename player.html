@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>SubScript player</title>
+<style>html,body,#p{margin:0;height:100%;width:100%;background:#000;overflow:hidden}</style>
+</head>
+<body>
+<div id="p"></div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var v = q.get('v') || '';
+  var lang = (q.get('lang') || '').split(/[-_]/)[0];
+  var start = parseInt(q.get('start') || '0', 10) || 0;
+  var pl = null, queue = [];
+  function send(n, d) {
+    var b = window.flutter_inappwebview;
+    if (b && b.callHandler) {
+      while (queue.length) { var x = queue.shift(); b.callHandler(x[0], x[1]); }
+      b.callHandler(n, d);
+    } else { queue.push([n, d]); }
+  }
+  window.__ss = {
+    play: function () { if (pl && pl.playVideo) pl.playVideo(); },
+    pause: function () { if (pl && pl.pauseVideo) pl.pauseVideo(); },
+    seek: function (t) { if (pl && pl.seekTo) pl.seekTo(t, true); },
+    volume: function (n) { if (pl && pl.setVolume) pl.setVolume(n); },
+    mute: function (m) { if (pl) { if (m) pl.mute(); else pl.unMute(); } },
+    // B36.2: the app slows the video slightly so the voice-over keeps up.
+    rate: function (r) { if (pl && pl.setPlaybackRate) pl.setPlaybackRate(r); },
+    // B33.3: the app asks to hide YouTube's own captions (ours are shown).
+    hideCaptions: function () {
+      try { if (pl && pl.unloadModule) pl.unloadModule('captions'); } catch (e) {}
+      try { if (pl && pl.setOption) pl.setOption('captions', 'track', {}); } catch (e) {}
+    },
+    // Switch the caption track (YouTube's own translation, B32.3).
+    captionTrack: function (lang, translate) {
+      try {
+        if (!pl || !pl.loadModule) return false;
+        pl.loadModule('captions');
+        pl.setOption('captions', 'track',
+          translate ? { translationLanguage: { languageCode: lang } } : { languageCode: lang });
+        return true;
+      } catch (e) { return false; }
+    }
+  };
+  if (!/^[A-Za-z0-9_-]{11}$/.test(v)) {
+    setTimeout(function () { send('error', { code: 2, text: 'invalid video id' }); }, 300);
+    return;
+  }
+  window.onYouTubeIframeAPIReady = function () {
+    var vars = { playsinline: 1, cc_load_policy: 1, rel: 0, autoplay: 1,
+      origin: 'https://qurantaha20114.github.io' };
+    if (lang && lang !== 'und') { vars.cc_lang_pref = lang; vars.hl = lang; }
+    if (start > 0) vars.start = start;
+    pl = new YT.Player('p', {
+      videoId: v, width: '100%', height: '100%', playerVars: vars,
+      events: { onError: function (e) { send('error', { code: e.data, text: '' }); } }
+    });
+  };
+  setInterval(function () {
+    if (pl && pl.getCurrentTime) {
+      var t = '', ad = false;
+      try {
+        var d = pl.getVideoData && pl.getVideoData();
+        t = (d && d.title) || '';
+        ad = !!(d && d.video_id && d.video_id !== v);
+      } catch (e) {}
+      var rates = [];
+      try { rates = (pl.getAvailablePlaybackRates && pl.getAvailablePlaybackRates()) || []; } catch (e) {}
+      send('tick', { t: pl.getCurrentTime(), s: pl.getPlayerState ? pl.getPlayerState() : -1, title: t, ad: ad, rates: rates });
+    }
+  }, 250);
+  var s = document.createElement('script');
+  s.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
